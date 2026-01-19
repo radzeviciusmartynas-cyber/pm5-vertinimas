@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Komandos narių vertinimas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { font-family: 'Raleway', sans-serif !important; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // =============================================
+        // SUPABASE KONFIGŪRACIJA
+        // =============================================
+        const SUPABASE_URL = 'https://wlgkkwmjpnpzhhownmjk.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndsZ2trd21qcG5wemhob3dubWprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4MjM1MjUsImV4cCI6MjA4NDM5OTUyNX0.opERunumCrVW8ex-RKDYrl53ONgX1UtfGPirfiaSVHk';
+        
+        // Pakeiskite šį raktą į savo anon key iš Supabase Dashboard → Settings → API
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // =============================================
+        // KONFIGŪRACIJA
+        // =============================================
+        const VOTING_START = new Date('2026-01-20T10:00:00');
+        const VOTING_END = new Date('2026-01-20T14:00:00');
+
+        const TEAMS_DATA = {
+            "Lepšiai": ["Astijus Stašinskis", "Justas Remeika", "Titas Zablockis", "Gabija Grabažiūtė", "Aistė Žiogaitė", "Mija Vilkaitė"],
+            "Musmėrės": ["Laura Bajarskaitė", "Viltė Buožytė", "Urtė Jankytė", "Austėja Mockaitytė", "Meda Paulauskaitė"],
+            "Kazlėkai": ["Lukas Pijus Anužis", "Arentas Bubelis", "Auksė Januškevičiūtė", "Laurynas Navickas", "Gustas Užkuraitis", "Aironas Vyšniauskas"],
+            "Baravykai": ["Martynas Nekrašas", "Martynas Simutis", "Deimantė Vidzickaitė", "Tomas Dirda", "Erikas Rimkus"],
+            "Babausiai": ["Adrijus Krol", "Viltė Vetlovaitė", "Nojus Spūdys", "Ernesta Jurevičiūtė", "Nedas Petkevičius", "Vygantas Marčiulaitis"],
+            "Grybų karas": ["Vaiva Tulickaitė", "Austėja Šalčiūtė", "Miglė Janulevičiūtė", "Matas Ananevas", "Jordanas Kmielius"],
+            "Eringi": ["Melita Janavičiūtė", "Aurėja Jarusevičiūtė", "Lukas Lapkovskis", "Vika Govoruchinaitė", "Estela Grigalaitytė"],
+            "Nefunkciniai grybai": ["Skaistė Drumstaitė", "Vakarė Kastravickaitė", "Mila Milošaitė", "Urtė Beišinaitė", "Emilija Brindzaitė"],
+            "Voveraitės": ["Ieva Janulytė", "Gustė Remeikaitė", "Diana Slavickaitė", "Emilija Sandargaitė", "Neda Saudargaitė"],
+            "Gauruotieji mėšlagrybiai": ["Laurynas Stakė", "Marius Jonika", "Jovaras Mickevičius", "Deivis Aleksynas", "Marius Griza"],
+            "Pievagrybiai": ["Grėta Gaidamavičiūtė", "Rugilė Margevičiūtė", "Rugilė Babelytė", "Jurgita Šidlauskaitė", "Goda Varaneckaitė", "Augustas Marušauskas"],
+            "Kelmučių gribai": ["Urtė Aleksaitė", "Merūnė Pačkauskaitė", "Medeina Makarevičiūtė", "Amelija Žukaitė", "Emilija Mankevičiūtė", "Rugilė Balčiūtė"]
+        };
+
+        const TEAM_NAMES = Object.keys(TEAMS_DATA).sort();
+
+        const CRITERIA = [
+            { id: "apimtis", name: "Darbo apimtis", desc: "Kiek realiai prisidėjo prie bendro rezultato?" },
+            { id: "kokybe", name: "Darbo kokybė", desc: "Ar atliktas darbas buvo kokybiškas?" },
+            { id: "iniciatyvumas", name: "Iniciatyvumas", desc: "Ar siūlė idėjas, vedė diskusijas?" },
+            { id: "patikimumas", name: "Patikimumas", desc: "Ar laiku atliko savo dalį, laikėsi susitarimų?" },
+            { id: "bendradarbiavimas", name: "Bendradarbiavimas", desc: "Ar buvo atviras kitų idėjoms, padėjo kitiems?" }
+        ];
+
+        // =============================================
+        // LOKALUS STATUSAS (tik ar pateikta, ne duomenys)
+        // =============================================
+        const LocalStatus = {
+            hasCompletedEvaluation: function(evaluator) {
+                try { 
+                    const data = JSON.parse(localStorage.getItem('eval_status') || '{}');
+                    return data[evaluator] === true;
+                } catch(e) { return false; }
+            },
+            markEvaluationComplete: function(evaluator) {
+                try {
+                    const data = JSON.parse(localStorage.getItem('eval_status') || '{}');
+                    data[evaluator] = true;
+                    localStorage.setItem('eval_status', JSON.stringify(data));
+                } catch(e) {}
+            },
+            hasVoted: function(voter) {
+                try { 
+                    const data = JSON.parse(localStorage.getItem('vote_status') || '{}');
+                    return data[voter] || null;
+                } catch(e) { return null; }
+            },
+            markVoted: function(voter, votedFor) {
+                try {
+                    const data = JSON.parse(localStorage.getItem('vote_status') || '{}');
+                    data[voter] = votedFor;
+                    localStorage.setItem('vote_status', JSON.stringify(data));
+                } catch(e) {}
+            }
+        };
+
+        function isVotingOpen() {
+            const now = new Date();
+            return now >= VOTING_START && now <= VOTING_END;
+        }
+
+        function getVotingStatus() {
+            const now = new Date();
+            if (now < VOTING_START) {
+                return { status: 'before', message: 'Balsavimas prasidės ' + VOTING_START.toLocaleDateString('lt-LT') + ' ' + VOTING_START.toLocaleTimeString('lt-LT', {hour: '2-digit', minute: '2-digit'}) };
+            } else if (now > VOTING_END) {
+                return { status: 'after', message: 'Balsavimas baigėsi' };
+            } else {
+                const remaining = Math.round((VOTING_END - now) / 1000 / 60);
+                return { status: 'open', message: 'Balsavimas atviras! Liko ' + remaining + ' min.' };
+            }
+        }
+
+        function App() {
+            const [view, setView] = useState("start");
+            const [selectedTeam, setSelectedTeam] = useState("");
+            const [currentUser, setCurrentUser] = useState("");
+            const [currentEvalIndex, setCurrentEvalIndex] = useState(0);
+            const [currentRatings, setCurrentRatings] = useState({});
+            const [currentComments, setCurrentComments] = useState({ darbai: "", indelis: "", tobulinti: "" });
+            const [selectedVote, setSelectedVote] = useState("");
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [error, setError] = useState("");
+            const [refreshKey, setRefreshKey] = useState(0);
+
+            const teamMembers = selectedTeam ? TEAMS_DATA[selectedTeam].filter(function(m) { return m !== currentUser; }) : [];
+            const votableTeams = TEAM_NAMES.filter(function(t) { return t !== selectedTeam; });
+
+            useEffect(function() {
+                const timer = setInterval(function() { setRefreshKey(function(k) { return k + 1; }); }, 60000);
+                return function() { clearInterval(timer); };
+            }, []);
+
+            async function handleStartEvaluation() {
+                if (selectedTeam && currentUser) {
+                    if (LocalStatus.hasCompletedEvaluation(currentUser)) {
+                        alert("Jūs jau įvertinote savo komandos narius. Vertinimą galima pateikti tik vieną kartą.");
+                        return;
+                    }
+                    setCurrentEvalIndex(0);
+                    setCurrentRatings({});
+                    setCurrentComments({ darbai: "", indelis: "", tobulinti: "" });
+                    setError("");
+                    setView("evaluate");
+                }
+            }
+
+            function handleStartVoting() {
+                if (!isVotingOpen()) return;
+                if (selectedTeam && currentUser) {
+                    const existingVote = LocalStatus.hasVoted(currentUser);
+                    setSelectedVote(existingVote || "");
+                    setError("");
+                    setView("vote");
+                }
+            }
+
+            async function handleSubmitCurrent() {
+                const allRated = CRITERIA.every(function(c) { return currentRatings[c.id]; });
+                if (!allRated) {
+                    alert("Prašome įvertinti visus kriterijus (1-10)");
+                    return;
+                }
+
+                setIsSubmitting(true);
+                setError("");
+
+                try {
+                    const { error: insertError } = await supabase
+                        .from('evaluations')
+                        .insert({
+                            evaluator_team: selectedTeam,
+                            evaluator: currentUser,
+                            evaluated: teamMembers[currentEvalIndex],
+                            rating_apimtis: currentRatings.apimtis,
+                            rating_kokybe: currentRatings.kokybe,
+                            rating_iniciatyvumas: currentRatings.iniciatyvumas,
+                            rating_patikimumas: currentRatings.patikimumas,
+                            rating_bendradarbiavimas: currentRatings.bendradarbiavimas,
+                            comment_darbai: currentComments.darbai || null,
+                            comment_indelis: currentComments.indelis || null,
+                            comment_tobulinti: currentComments.tobulinti || null
+                        });
+
+                    if (insertError) {
+                        if (insertError.code === '23505') {
+                            setError("Šį asmenį jau vertinote anksčiau.");
+                        } else {
+                            throw insertError;
+                        }
+                    }
+
+                    if (currentEvalIndex < teamMembers.length - 1) {
+                        setCurrentEvalIndex(currentEvalIndex + 1);
+                        setCurrentRatings({});
+                        setCurrentComments({ darbai: "", indelis: "", tobulinti: "" });
+                    } else {
+                        LocalStatus.markEvaluationComplete(currentUser);
+                        setView("done");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    setError("Klaida saugant. Bandykite dar kartą.");
+                } finally {
+                    setIsSubmitting(false);
+                }
+            }
+
+            async function handleSubmitVote() {
+                if (!isVotingOpen()) {
+                    alert("Balsavimo laikas pasibaigė arba dar neprasidėjo.");
+                    return;
+                }
+                if (!selectedVote) {
+                    alert("Pasirinkite komandą");
+                    return;
+                }
+
+                setIsSubmitting(true);
+                setError("");
+
+                try {
+                    const existingVote = LocalStatus.hasVoted(currentUser);
+                    
+                    if (existingVote) {
+                        const { error: updateError } = await supabase
+                            .from('votes')
+                            .update({ voted_for: selectedVote })
+                            .eq('voter', currentUser);
+                        
+                        if (updateError) throw updateError;
+                    } else {
+                        const { error: insertError } = await supabase
+                            .from('votes')
+                            .insert({
+                                voter_team: selectedTeam,
+                                voter: currentUser,
+                                voted_for: selectedVote
+                            });
+
+                        if (insertError) {
+                            if (insertError.code === '23505') {
+                                const { error: updateError } = await supabase
+                                    .from('votes')
+                                    .update({ voted_for: selectedVote })
+                                    .eq('voter', currentUser);
+                                if (updateError) throw updateError;
+                            } else {
+                                throw insertError;
+                            }
+                        }
+                    }
+
+                    LocalStatus.markVoted(currentUser, selectedVote);
+                    setView("voteDone");
+                } catch (err) {
+                    console.error(err);
+                    setError("Klaida saugant balsą. Bandykite dar kartą.");
+                } finally {
+                    setIsSubmitting(false);
+                }
+            }
+
+            // START VIEW
+            if (view === "start") {
+                const hasVoted = currentUser && LocalStatus.hasVoted(currentUser);
+                const existingVote = hasVoted;
+                const hasCompletedEval = currentUser && LocalStatus.hasCompletedEvaluation(currentUser);
+                const votingStatus = getVotingStatus();
+                const votingOpen = isVotingOpen();
+
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 p-4">
+                        <div className="max-w-lg mx-auto">
+                            <div className="bg-white rounded-2xl shadow-xl p-8 mt-8">
+                                <div className="text-center mb-6">
+                                    <span className="text-5xl">🍄</span>
+                                    <h1 className="text-2xl font-bold text-gray-800 mt-3">Komandos vertinimas</h1>
+                                    <p className="text-gray-500 mt-1">Pasirinkite veiksmą</p>
+                                </div>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Jūsų komanda</label>
+                                        <select value={selectedTeam} onChange={function(e) { setSelectedTeam(e.target.value); setCurrentUser(""); }} className="w-full p-3 border-2 border-gray-200 rounded-xl">
+                                            <option value="">— Pasirinkite komandą —</option>
+                                            {TEAM_NAMES.map(function(team) { return <option key={team} value={team}>{team}</option>; })}
+                                        </select>
+                                    </div>
+                                    {selectedTeam && (
+                                        <div>
+                                            <label className="block text-sm font-semibold text-gray-700 mb-2">Jūs esate</label>
+                                            <select value={currentUser} onChange={function(e) { setCurrentUser(e.target.value); }} className="w-full p-3 border-2 border-gray-200 rounded-xl">
+                                                <option value="">— Pasirinkite save —</option>
+                                                {TEAMS_DATA[selectedTeam].map(function(m) { return <option key={m} value={m}>{m}</option>; })}
+                                            </select>
+                                        </div>
+                                    )}
+                                    {currentUser && (
+                                        <div className="space-y-3 pt-2">
+                                            {hasCompletedEval ? (
+                                                <div className="w-full py-4 bg-green-100 text-green-700 font-semibold rounded-xl flex items-center justify-center gap-3 border-2 border-green-300">
+                                                    <span>✅</span> Komandos vertinimas pateiktas
+                                                </div>
+                                            ) : (
+                                                <button onClick={handleStartEvaluation} className="w-full py-4 bg-amber-600 text-white font-semibold rounded-xl hover:bg-amber-700 flex items-center justify-center gap-3">
+                                                    <span>👥</span> Vertinti komandos narius
+                                                </button>
+                                            )}
+                                            {votingOpen ? (
+                                                <React.Fragment>
+                                                    <button onClick={handleStartVoting} className={"w-full py-4 font-semibold rounded-xl flex items-center justify-center gap-3 " + (hasVoted ? "bg-green-100 text-green-700 border-2 border-green-300" : "bg-purple-600 text-white hover:bg-purple-700")}>
+                                                        <span>🏆</span> {hasVoted ? "Pakeisti balsą" : "Balsuoti už geriausią pristatymą"}
+                                                    </button>
+                                                    <p className="text-center text-sm text-purple-600 font-medium">⏱️ {votingStatus.message}</p>
+                                                    {hasVoted && (
+                                                        <p className="text-center text-sm text-green-600">✓ Balsavote už: <strong>{existingVote}</strong></p>
+                                                    )}
+                                                </React.Fragment>
+                                            ) : (
+                                                <div className="w-full py-4 bg-gray-100 text-gray-500 font-semibold rounded-xl flex flex-col items-center justify-center gap-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <span>🏆</span> Balsavimas už geriausią pristatymą
+                                                    </div>
+                                                    <span className="text-xs font-normal">🔒 {votingStatus.message}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="mt-8 pt-6 border-t text-center">
+                                    <p className="text-xs text-gray-400">🔒 Duomenys saugūs ir konfidencialūs</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // VOTE VIEW
+            if (view === "vote") {
+                const votingStatus = getVotingStatus();
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 p-4">
+                        <div className="max-w-2xl mx-auto">
+                            <div className="bg-white rounded-2xl shadow-xl p-6 mt-4">
+                                <div className="text-center mb-6">
+                                    <span className="text-4xl">🏆</span>
+                                    <h2 className="text-xl font-bold text-gray-800 mt-2">Geriausio pristatymo rinkimai</h2>
+                                    <p className="text-gray-500">Pasirinkite geriausiai pristačiusią komandą</p>
+                                    <p className="text-purple-600 text-sm mt-2 font-medium">{currentUser} ({selectedTeam})</p>
+                                    <p className="text-purple-500 text-xs mt-1">⏱️ {votingStatus.message}</p>
+                                </div>
+                                {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
+                                <div className="space-y-2 mb-6">
+                                    {votableTeams.map(function(team) {
+                                        return (
+                                            <button key={team} onClick={function() { setSelectedVote(team); }} disabled={isSubmitting} className={"w-full p-4 rounded-xl border-2 text-left flex items-center gap-4 " + (selectedVote === team ? "border-purple-500 bg-purple-50" : "border-gray-200 hover:border-purple-300")}>
+                                                <div className={"w-5 h-5 rounded-full border-2 flex items-center justify-center " + (selectedVote === team ? "border-purple-500 bg-purple-500" : "border-gray-300")}>
+                                                    {selectedVote === team && <span className="text-white text-xs">✓</span>}
+                                                </div>
+                                                <span className="font-semibold">{team}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <div className="flex gap-3">
+                                    <button onClick={function() { setView("start"); }} disabled={isSubmitting} className="flex-1 py-3 bg-gray-100 rounded-xl hover:bg-gray-200">← Atgal</button>
+                                    <button onClick={handleSubmitVote} disabled={!selectedVote || isSubmitting} className="flex-1 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:bg-gray-300">
+                                        {isSubmitting ? "Saugoma..." : "Balsuoti ✓"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // VOTE DONE
+            if (view === "voteDone") {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl shadow-xl p-8 text-center max-w-md">
+                            <div className="text-6xl mb-4">🎉</div>
+                            <h1 className="text-2xl font-bold mb-2">Ačiū už balsą!</h1>
+                            <p className="text-gray-600 mb-2">Jūs balsavote už:</p>
+                            <p className="text-xl font-bold text-purple-600 mb-6">{selectedVote}</p>
+                            <button onClick={function() { setView("start"); setSelectedVote(""); }} className="px-6 py-3 bg-gray-100 rounded-xl hover:bg-gray-200">Grįžti į pradžią</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // EVALUATE VIEW
+            if (view === "evaluate") {
+                const currentMember = teamMembers[currentEvalIndex];
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 p-4">
+                        <div className="max-w-2xl mx-auto">
+                            <div className="bg-white rounded-2xl shadow-xl p-6 mt-4">
+                                <div className="flex justify-between items-center mb-6">
+                                    <div>
+                                        <p className="text-sm text-amber-600 font-semibold">🍄 {selectedTeam}</p>
+                                        <h2 className="text-xl font-bold">Vertinate: {currentMember}</h2>
+                                    </div>
+                                    <div className="text-2xl font-bold text-amber-600">{currentEvalIndex + 1}/{teamMembers.length}</div>
+                                </div>
+                                {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
+                                <div className="space-y-4 mb-6">
+                                    {CRITERIA.map(function(c) {
+                                        return (
+                                            <div key={c.id} className="bg-gray-50 rounded-xl p-4">
+                                                <div className="flex justify-between mb-2">
+                                                    <div>
+                                                        <h3 className="font-semibold">{c.name}</h3>
+                                                        <p className="text-xs text-gray-500">{c.desc}</p>
+                                                    </div>
+                                                    <div className="text-2xl font-bold text-amber-600 w-10 text-center">{currentRatings[c.id] || "—"}</div>
+                                                </div>
+                                                <div className="flex gap-1">
+                                                    {[1,2,3,4,5,6,7,8,9,10].map(function(n) {
+                                                        return <button key={n} onClick={function() { setCurrentRatings(Object.assign({}, currentRatings, {[c.id]: n})); }} disabled={isSubmitting} className={"flex-1 py-2 text-sm font-semibold rounded-lg " + (currentRatings[c.id] === n ? "bg-amber-600 text-white" : "bg-white border border-gray-200 hover:bg-amber-50")}>{n}</button>;
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <div className="space-y-3 mb-6">
+                                    <div>
+                                        <label className="block text-sm font-semibold mb-1">Atlikti darbai <span className="text-gray-400 font-normal">(neprivaloma)</span></label>
+                                        <textarea value={currentComments.darbai} onChange={function(e) { setCurrentComments(Object.assign({}, currentComments, {darbai: e.target.value})); }} disabled={isSubmitting} className="w-full p-3 border rounded-xl text-sm" rows={2} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold mb-1">Didžiausias indėlis <span className="text-gray-400 font-normal">(neprivaloma)</span></label>
+                                        <textarea value={currentComments.indelis} onChange={function(e) { setCurrentComments(Object.assign({}, currentComments, {indelis: e.target.value})); }} disabled={isSubmitting} className="w-full p-3 border rounded-xl text-sm" rows={2} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold mb-1">Ką tobulinti? <span className="text-gray-400 font-normal">(neprivaloma)</span></label>
+                                        <textarea value={currentComments.tobulinti} onChange={function(e) { setCurrentComments(Object.assign({}, currentComments, {tobulinti: e.target.value})); }} disabled={isSubmitting} className="w-full p-3 border rounded-xl text-sm" rows={2} />
+                                    </div>
+                                </div>
+                                <button onClick={handleSubmitCurrent} disabled={isSubmitting} className="w-full py-4 bg-amber-600 text-white font-semibold rounded-xl hover:bg-amber-700 disabled:bg-gray-400">
+                                    {isSubmitting ? "Saugoma..." : (currentEvalIndex < teamMembers.length - 1 ? "Išsaugoti ir tęsti →" : "Baigti vertinimą ✓")}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // DONE VIEW
+            if (view === "done") {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl shadow-xl p-8 text-center max-w-md">
+                            <div className="text-6xl mb-4">✅</div>
+                            <h1 className="text-2xl font-bold mb-2">Ačiū, {currentUser.split(' ')[0]}!</h1>
+                            <p className="text-gray-600 mb-6">Vertinimai saugiai išsaugoti.</p>
+                            <button onClick={function() { setView("start"); setSelectedTeam(""); setCurrentUser(""); }} className="px-6 py-3 bg-gray-100 rounded-xl hover:bg-gray-200">Grįžti į pradžią</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return null;
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
